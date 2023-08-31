@@ -1,60 +1,61 @@
+mod error;
 mod model;
 
+use crate::error::MyError;
+use error::GeneralResult;
+use model::{Game, NodeId};
+use serde::Deserialize;
 use std::{
     fmt::Display,
-    io::{self, stdin, stdout, Write},
+    io::{stdin, stdout, Write},
 };
-
-use serde::Deserialize;
-use thiserror::Error;
 use tokio::fs;
-use toml::de;
 
 #[derive(Deserialize, Debug)]
 pub struct Config {}
 
-#[derive(Error, Debug)]
-pub enum MyError {
-    #[error("General error ")]
-    GeneralError,
-    #[error("Io error {0}")]
-    IoError(#[from] io::Error),
-    #[error("Toml error {0}")]
-    TomlError(#[from] de::Error),
-
-    #[error("Serde error {0}")]
-    SerdeError(#[from] serde_json::Error),
-}
-
-pub type MyResult<T> = Result<T, MyError>;
-
-pub enum Choice {
+pub enum PlayerChoice {
     Quit,
+    DiscoverNode(NodeId),
+    VisitNode(NodeId),
 }
 
-impl Display for Choice {
+impl Display for PlayerChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Choice::Quit => write!(f, "Quit"),
+            PlayerChoice::Quit => write!(f, "Quit"),
+            PlayerChoice::DiscoverNode(id) => write!(f, "Discover new node {id}"),
+            PlayerChoice::VisitNode(id) => write!(f, "Visit previous node {id}"),
         }
     }
 }
 
-pub async fn run() -> MyResult<()> {
+pub async fn run() -> GeneralResult<()> {
     let s = fs::read_to_string("Config.toml").await?;
     let _config: Config = toml::from_str(&s)?;
 
     let mut quit = false;
 
-    let choices = vec![Choice::Quit];
+    let mut game = Game::new();
 
     while !quit {
-        println!("Available choices :");
-        for (id, choice) in choices.iter().enumerate() {
-            println!("{id} - {choice}");
-        }
+        let (id, _node) = game.get_current_node();
 
-        if let Some(Choice::Quit) = choices.get(loop_until_valid_input(choices.len())) {
+        println!("You currently are at node {id}");
+
+        let choices = game.generate_choices();
+
+        println!("Available choices :");
+        choices
+            .iter()
+            .enumerate()
+            .for_each(|(id, choice)| println!("{id} - {choice}"));
+
+        let choice = choices
+            .get(loop_until_valid_input(choices.len()))
+            .expect("Choice must be valid.");
+
+        if game.handle_choice(choice).map_err(MyError::ChatRpg)? {
             quit = true;
         }
     }
@@ -63,7 +64,7 @@ pub async fn run() -> MyResult<()> {
 }
 
 #[tokio::main]
-async fn main() -> MyResult<()> {
+async fn main() -> GeneralResult<()> {
     run().await
 }
 
