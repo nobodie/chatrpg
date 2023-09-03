@@ -18,14 +18,16 @@ pub enum PlayerChoice {
     Quit,
     DiscoverNode(NodeId),
     VisitNode(NodeId),
+    TalkTo(String),
 }
 
 impl Display for PlayerChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PlayerChoice::Quit => write!(f, "Quit"),
+            PlayerChoice::Quit => write!(f, "Quit game"),
             PlayerChoice::DiscoverNode(id) => write!(f, "Discover new node {id}"),
             PlayerChoice::VisitNode(id) => write!(f, "Visit previous node {id}"),
+            PlayerChoice::TalkTo(name) => write!(f, "Talk to {name}"),
         }
     }
 }
@@ -36,7 +38,7 @@ pub async fn run() -> GeneralResult<()> {
 
     let mut quit = false;
 
-    let mut game = Game::new();
+    let mut game = Game::new().map_err(MyError::ChatRpg)?;
 
     while !quit {
         let (id, _node) = game.get_current_node();
@@ -56,7 +58,10 @@ pub async fn run() -> GeneralResult<()> {
             .expect("Choice must be valid.");
 
         if game.handle_choice(choice).map_err(MyError::ChatRpg)? {
-            quit = true;
+            println!("Sure ? : [0 - no, 1 - yes]");
+            if loop_until_valid_input(2) == 1 {
+                quit = true;
+            }
         }
     }
 

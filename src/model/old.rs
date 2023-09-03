@@ -1,11 +1,6 @@
-pub enum Effect {
-    _LocationSpawnChance {
-        chance: f32,
-        lore: String,
-        effects: Vec<LocationEffect>,
-    },
-}
+use enum_derived::Rand;
 
+#[derive(Debug)]
 pub enum LocationEffect {
     _SpawnItem { lore: String },
     _SpawnNpc { lore: String },
@@ -13,10 +8,8 @@ pub enum LocationEffect {
 
 pub struct Item {}
 
-pub struct Npc {
-    _name: String,
-    _informations: Vec<Effect>,
-}
+#[derive(Rand)]
+pub struct Npc {}
 
 pub enum Aura {
     _Malediction,

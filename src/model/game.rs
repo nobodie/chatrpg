@@ -1,12 +1,14 @@
 use super::{
     node::{Connection, Node, NodeId, NodeStatus},
-    old::{Aura, Effect, Item},
+    old::{Aura, Item, Npc},
+    Effect,
 };
 use crate::{
     error::{RpgError, RpgResult},
     PlayerChoice,
 };
-use rand::{seq::SliceRandom, thread_rng};
+use enum_derived::Rand;
+use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::collections::HashSet;
 
 pub struct Game {
@@ -22,9 +24,8 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new() -> Self {
-        let mut spawn = Node::new();
-        spawn.status = NodeStatus::Visited;
+    pub fn new() -> RpgResult<Self> {
+        let spawn = Node::new();
 
         let mut game = Self {
             nodes: vec![spawn],
@@ -36,9 +37,9 @@ impl Game {
             _effects: Vec::new(),
         };
 
-        game.generate_surroundings(3, 0);
+        game.move_to(NodeId(0))?;
 
-        game
+        Ok(game)
     }
 
     pub fn get_node_mut(&mut self, id: NodeId) -> RpgResult<&mut Node> {
@@ -53,6 +54,14 @@ impl Game {
         (
             self.current_node.clone(),
             self.get_node(self.current_node.clone()).expect("cant fail"),
+        )
+    }
+
+    pub fn get_current_node_mut(&mut self) -> (NodeId, &mut Node) {
+        (
+            self.current_node.clone(),
+            self.get_node_mut(self.current_node.clone())
+                .expect("cant fail"),
         )
     }
 
@@ -80,7 +89,34 @@ impl Game {
             .collect()
     }
 
-    pub fn move_to(&mut self, node_id: NodeId) -> RpgResult<()> {
+    fn move_to(&mut self, node_id: NodeId) -> RpgResult<()> {
+        self.current_node = node_id.clone();
+
+        let node = self.get_node_mut(node_id)?;
+
+        if node.status == NodeStatus::Unvisited {
+            node.status = NodeStatus::Visited;
+
+            let first_visit_effects: Vec<Effect> = node.on_first_visit_effects.drain(0..).collect();
+
+            for effect in first_visit_effects {
+                match effect {
+                    Effect::GenerateSurroundings {
+                        connections_with_new_nodes,
+                        connections_to_unvisited_nodes,
+                    } => self.generate_surroundings(
+                        connections_with_new_nodes,
+                        connections_to_unvisited_nodes,
+                    ),
+                    Effect::SpawnNpc { spawn_chance } => self.generate_npc(spawn_chance),
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn visit_surrounding_node(&mut self, node_id: NodeId) -> RpgResult<()> {
         if !self
             .connections
             .iter()
@@ -92,12 +128,19 @@ impl Game {
             ));
         }
 
-        let node = self.get_node_mut(node_id.clone())?;
+        self.move_to(node_id)
+    }
 
-        node.status = NodeStatus::Visited;
-        self.current_node = node_id;
+    fn generate_npc(&mut self, spawn_chance: f64) {
+        let mut rng = thread_rng();
 
-        Ok(())
+        if rng.gen_bool(spawn_chance) {
+            let (_, node) = self.get_current_node_mut();
+
+            let npc = Npc::rand();
+
+            node.npcs.push(npc);
+        }
     }
 
     fn generate_surroundings(
@@ -118,6 +161,8 @@ impl Game {
         let mut unvisited_nodes = self.get_node_ids_with_status(NodeStatus::Unvisited);
         unvisited_nodes.shuffle(&mut thread_rng());
 
+        println!("unvisited nodes count : {}", unvisited_nodes.len());
+
         for _ in 0..connections_to_unvisited_nodes {
             if let Some(id) = unvisited_nodes.pop() {
                 self.connections
@@ -135,6 +180,13 @@ impl Game {
                 NodeStatus::Unvisited => choices.push(PlayerChoice::DiscoverNode(node_id)),
             }
         }
+
+        let (_, current_node) = self.get_current_node();
+
+        for (npc_id, _npc) in current_node.npcs.iter().enumerate() {
+            choices.push(PlayerChoice::TalkTo(npc_id.to_string()))
+        }
+
         choices.push(PlayerChoice::Quit);
 
         choices
@@ -150,8 +202,10 @@ impl Game {
     pub fn get_surrounding_node_ids(&self) -> Vec<NodeId> {
         self.connections
             .iter()
-            .filter(|c| c.contains(self.current_node.clone()))
-            .map(|c| c.other_end(self.current_node.clone()))
+            .filter_map(|c| {
+                (c.contains(self.current_node.clone()))
+                    .then_some(c.other_end(self.current_node.clone()))
+            })
             .collect()
     }
 
@@ -159,11 +213,13 @@ impl Game {
         match choice {
             PlayerChoice::Quit => return Ok(true),
             PlayerChoice::DiscoverNode(node_id) => {
-                self.move_to(node_id.clone())?;
-                self.generate_surroundings(2, 1);
+                self.visit_surrounding_node(node_id.clone())?;
             }
             PlayerChoice::VisitNode(node_id) => {
-                self.move_to(node_id.clone())?;
+                self.visit_surrounding_node(node_id.clone())?;
+            }
+            PlayerChoice::TalkTo(name) => {
+                println!("Npc {name} doesn't want to talk");
             }
         }
 

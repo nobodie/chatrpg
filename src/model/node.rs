@@ -1,5 +1,7 @@
-use super::old::{Effect, Npc};
+use super::{old::Npc, Effect};
+use crate::model::{generate_surroundings_effect, spawn_npc_effect};
 use std::{fmt::Display, hash::Hash};
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub struct NodeId(pub usize);
 
@@ -53,7 +55,8 @@ pub enum NodeStatus {
 pub struct Node {
     pub status: NodeStatus,
     _informations: Vec<Effect>,
-    _npcs: Vec<Npc>,
+    pub npcs: Vec<Npc>,
+    pub on_first_visit_effects: Vec<Effect>,
 }
 
 impl Node {
@@ -61,7 +64,8 @@ impl Node {
         Self {
             status: NodeStatus::Unvisited,
             _informations: Vec::new(),
-            _npcs: Vec::new(),
+            npcs: Vec::new(),
+            on_first_visit_effects: vec![generate_surroundings_effect(), spawn_npc_effect()],
         }
     }
 }
